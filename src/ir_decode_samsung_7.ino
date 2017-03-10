@@ -5,9 +5,12 @@
 
 #define TIMER_RESET TCNT1 = 0
 #define SAMPLE_SIZE 150
+#define OFFSETS 500
+#define TIMEOUT_CYCLES 100000
 
 int IRpin = 11;
 unsigned int TimerValue[3][SAMPLE_SIZE];
+unsigned long Timings[OFFSETS];
 char direction[3][SAMPLE_SIZE];
 byte change_count;
 long time;
@@ -15,6 +18,7 @@ unsigned long curr_tcnt1 = 0;
 unsigned long prev_tcnt1 = 0;
 unsigned long ellapsed = 0;
 int chunk = 0;
+bool first_bit = false;
 
 void setup() {
   Serial.begin(115200);
@@ -41,141 +45,130 @@ void loop() {
 
   Serial.println("Waiting2...");
 
-  while (digitalRead(IRpin) == HIGH) {
-  }
   TIMER_RESET;
   TimerValue[chunk][change_count] = TCNT1;
   ellapsed = 0;
   int init_count = change_count++;
   int chunk_index;
-  direction[0][init_count] = '0';
-  direction[1][init_count] = '0';
-  direction[2][init_count] = '0';
 
-  while (chunk < 3) {
-    //    while (change_count < SAMPLE_SIZE) {
-    curr_tcnt1 = TCNT1;
+  // direction[0][init_count] = '0';
+  // direction[1][init_count] = '0';
+  // direction[2][init_count] = '0';
 
-    if (prev_tcnt1 > curr_tcnt1) {
-      ellapsed = ellapsed + (65535 - prev_tcnt1) + curr_tcnt1; // rollover
-    } else {
-      //      Serial.print("\n<");
-      ellapsed = ellapsed + (curr_tcnt1 - ellapsed);
+  unsigned int offset_index = 0;
+  unsigned long start = micros();
+  byte OldState = HIGH;
+  byte NewState;
+  unsigned long StartTime, DeltaTime, CurrentTime, PrevTime;
+  bool Finished = false;
+  // while (chunk < 4) {
+
+  while (true) {
+
+    // hold on HIGH
+    while (digitalRead(IRpin) == HIGH && offset_index == 0) {
+      // Serial.print("\nMicrosB4\t");
+      // Serial.print(micros());
+      StartTime = micros(); // start the counter
+      OldState = LOW;
     }
 
-    //    if (ellapsed > 100000) {
-    //      break;
-    //    }
-
-    if (curr_tcnt1 - prev_tcnt1 > 2000 && chunk <= 3) {
-      chunk++;
-      chunk_index = chunk - 1;
-      change_count = init_count;
-      Serial.println(chunk);
-      //      Serial.println(chunk_index);
-    }
-
-    if (direction[chunk_index][change_count - 1] == '0') {
-      prev_tcnt1 = TCNT1;
-      while (digitalRead(IRpin) == LOW) {
-        if (ellapsed + TCNT1 > 75000) {
-          chunk++;
-          //          break;
-        }
-        //        if (ellapsed + TCNT1 > 100000) {
-        //          Serial.println("\ntimeout");
-        //          Serial.println(ellapsed + TCNT1 );
-        //          chunk = 4;
-        //          break;
-        //      }
+    while (OldState == (NewState = digitalRead(IRpin))) {
+      CurrentTime = micros();
+      // Serial.print(micros());
+      // if ((DeltaTime = (CurrentTime = micros()) - StartTime) > 100000) {
+      if (CurrentTime - StartTime > 500000) {
+        // Serial.print("\ntimeout");
+        // Serial.print(CurrentTime - PrevTime);
+        Finished = true;
+        break;
       }
-      TimerValue[chunk_index][change_count] = TCNT1 - prev_tcnt1;
-      direction[chunk_index][change_count++] = '1';
-    } else {
-      prev_tcnt1 = TCNT1;
-      while (digitalRead(IRpin) == HIGH) {
-        if (ellapsed + TCNT1 > 75000) {
-          chunk++;
-          //          break;
-        }
-        //        if (ellapsed + TCNT1 > 100000) {
-        //          Serial.println("\ntimeout");
-        //          Serial.println(ellapsed + TCNT1 );
-        //          chunk = 4;
-        //          break;
-        //      }
-      }
-      TimerValue[chunk_index][change_count] = TCNT1 - prev_tcnt1;
-      direction[chunk_index][change_count++] = '0';
-      //      }
     }
+    // Serial.print(" ");
+    // Serial.print(DeltaTime);
+    Timings[offset_index] = CurrentTime - PrevTime;
+
+    PrevTime = CurrentTime;
+
+    if (Finished)
+      break;
+    offset_index++;
+    OldState = NewState;
   }
 
-  Serial.println("Bit stream detected!");
-  chunk = 0;
-  // WORKS
-  byte cycle[7] = {0};
-  int cycletime;
-  int shifter;
-  int byte_index = 0;
-  change_count = 0;
-  while (chunk < 3) {
-    time = (long)TimerValue[chunk][change_count] * 4;
-    //    time = (long) TimerValue[chunk][change_count];
-    //    Serial.print(time);
-    //    Serial.print("\t");
-    //    Serial.println(direction[chunk][change_count++]);
+  Serial.print("\nMicrosDiff: ");
+  Serial.print(micros() - StartTime);
 
-    while (change_count < SAMPLE_SIZE) {
-      Serial.print("\n cc:");
-      Serial.print(change_count);
-      cycletime =
-          TimerValue[chunk][change_count] + TimerValue[chunk][change_count + 1];
-      if (TimerValue[chunk][change_count] > 100 &&
-          TimerValue[chunk][change_count] < 500) { // check for invalid timings
-        byte_index = ((change_count + 14) / 16) - 1;
-        shifter = (byte_index + 1) * 8 - (change_count / 2);
-        //        shifter = 8 - ((change_count - 1) / 2);
-        //        Serial.print("\t byte_index: ");
-        //        Serial.print(byte_index);
-        if (cycletime < 300) {
-          Serial.print("\t decoded: ");
-          Serial.print("1");
-          cycle[byte_index] = cycle[byte_index] | (0x1 << shifter);
-        } else {
-          Serial.print("\t decoded: ");
-          Serial.print("0");
-          cycle[byte_index] = cycle[byte_index] | (0x0 << shifter);
-        }
-        Serial.print("\t shifted: ");
-        Serial.print(shifter);
+  Serial.print("\nBit stream detected!\n");
+
+  byte word[21] = {0};
+  unsigned int bit_index, byte_index, shifter;
+  bit_index = 0;
+  byte_index = 0;
+  for (size_t i = 0; i < OFFSETS; i++) {
+
+    // if ((Timings[i] > 2500 && Timings[i] < 10000) ||
+    //     (Timings[i + 1] > 2500 && Timings[i + 1] < 10000)) {
+    //   Serial.print("\nhdr: \n");
+    //   i + 2;
+    // }
+
+    if (bit_index == 8) {
+      bit_index = 0;
+      byte_index++;
+    }
+    // byte_index = ((bit_index + 7) / 8) - 1;
+    shifter = 7 - bit_index;
+
+    if (Timings[i] > 8000                        // start headers
+        || Timings[i] + Timings[i + 1] > 2250) { // mid headers
+      // Serial.print("\nhdr: \n");
+      bit_index = 0;
+      // detect mid headers
+      if (Timings[i + 2] > 2000 && Timings[i + 3] > 7000) {
+        // Serial.print("\nmhdr: \n");
       }
-
-      //            Serial.print("\t");
-      //      Serial.print("0x");
-      //      Serial.print(cycle[byte_index], HEX);
-      Serial.print("\t");
-      Serial.print(cycletime);
-      //      Serial.print("\t");
-      //            Serial.print((long) TimerValue[chunk][change_count]);
-      //            Serial.print(" : ");
-      //            Serial.print((long) TimerValue[chunk][change_count - 1]);
-      //            Serial.println("\t");
-      change_count++;
-      //      Serial.print(direction[chunk][change_count]);
-      change_count++; // odd check
-    }
-    Serial.print("\nFinal byte: 0x");
-    for (int i = 0; i < sizeof(cycle); i++) {
-      Serial.print(cycle[i], HEX);
-      Serial.print(" ");
-      cycle[i] = (char)0;
     }
 
-    chunk++;
-    change_count = 0;
+    // 7+1*8 = 64 => (114+1/2) => 57
+    // 64 - 57 = 7
+
+    // Serial.print("\n");
+    // Serial.print(i);
+    // Serial.print("i= ");
+    // Serial.print(Timings[i]);
+    // Serial.print("+");
+    // Serial.print(Timings[i + 1]);
+    // Serial.print("us");
+    // Serial.print(byte_index);
+    // Serial.print("<<");
+    // Serial.print(shifter);
+    // Serial.print(": \t bit_index:");
+    // Serial.print(bit_index);
+    // Serial.print("\t bit: ");
+    //
+    if (Timings[i] + Timings[i + 1] < 2500 &&
+        Timings[i] + Timings[i + 1] > 1200) {
+      // Serial.print("0");
+      word[byte_index] = word[byte_index] | (0x0 << shifter);
+      bit_index++;
+    }
+    if (Timings[i] + Timings[i + 1] > 800 &&
+        Timings[i] + Timings[i + 1] < 1200) {
+      // Serial.print("1");
+      word[byte_index] = word[byte_index] | (0x1 << shifter);
+      bit_index++;
+    }
+    i++;
+  };
+  for (int i = 0; i < sizeof(word); i++) {
+    if (i == 0 || i == 7 || i == 14) {
+      Serial.print("\nbyte: 0x");
+    }
+    Serial.print(word[i], HEX);
+    Serial.print(" ");
   }
 
-  Serial.println("\nBit stream end!");
+  Serial.print("\nBit stream end!");
   delay(2000);
 }
