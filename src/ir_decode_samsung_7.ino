@@ -3,20 +3,16 @@
 #include <avr/io.h>
 
 #define TIMER_RESET TCNT1 = 0
-#define SAMPLE_SIZE 255
+#define SAMPLE_SIZE 128
 
 int IRpin = 11;
-unsigned int Chunk1[SAMPLE_SIZE];
-unsigned int Chunk2[SAMPLE_SIZE];
-unsigned int Chunk3[SAMPLE_SIZE];
-char dir1[SAMPLE_SIZE];
-char dir2[SAMPLE_SIZE];
-char dir3[SAMPLE_SIZE];
+unsigned int TimerValue[3][SAMPLE_SIZE];
+char direction[3][SAMPLE_SIZE];
 byte change_count;
-byte current_chunk = 0;
 long time;
-int currtcnt1 = 0;
-int prevtcnt1 = 0;
+long curr_tcnt1 = 0;
+long prev_tcnt1 = 0;
+int chunk = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -41,106 +37,64 @@ void loop() {
   while (digitalRead(IRpin) == HIGH) {
   }
   TIMER_RESET;
-  Chunk1[change_count] = TCNT1;
-  dir1[1] = '0';
-  dir2[1] = '0';
-  dir3[1] = '0';
+  TimerValue[chunk][change_count] = TCNT1;
+  int init_count = change_count++;
+  int chunk_index;
+  direction[0][init_count] = '0';
+  direction[1][init_count] = '0';
+  direction[2][init_count] = '0';
 
-  while (change_count < SAMPLE_SIZE && current_chunk <= 3) {
-    currtcnt1 = TCNT1;
-    //   Serial.println(currtcnt1 *4);
-    //   Serial.println(prevtcnt1 *4);
+  while (chunk <= 3) {
+    //    while (change_count < SAMPLE_SIZE) {
+    curr_tcnt1 = TCNT1;
 
-    if (currtcnt1 - prevtcnt1 > 2000) {
-      Serial.println((currtcnt1 - prevtcnt1));
-      change_count = 1;
-      current_chunk++;
-    }
-    //
-    if (current_chunk == 1) {
-      if (dir1[change_count - 1] == '0') {
-        prevtcnt1 = TCNT1;
-        while (digitalRead(IRpin) == LOW) {
-        }
-        Chunk1[change_count] = TCNT1 - prevtcnt1;
-        dir1[change_count++] = '1';
-      } else {
-        prevtcnt1 = TCNT1;
-        while (digitalRead(IRpin) == HIGH) {
-        }
-        Chunk1[change_count] = TCNT1 - prevtcnt1;
-        dir1[change_count++] = '0';
-      }
+    if (curr_tcnt1 - prev_tcnt1 > 2000) {
+      Serial.println(curr_tcnt1 - prev_tcnt1);
+
+      chunk++;
+      chunk_index = chunk - 1;
+      change_count = init_count;
+      Serial.println(chunk);
+      Serial.println(chunk_index);
     }
 
-    if (current_chunk == 2) {
-      if (dir2[change_count - 1] == '0') {
-        prevtcnt1 = TCNT1;
-        while (digitalRead(IRpin) == LOW) {
-        }
-        Chunk2[change_count] = TCNT1 - prevtcnt1;
-        dir2[change_count++] = '1';
-      } else {
-        prevtcnt1 = TCNT1;
-        while (digitalRead(IRpin) == HIGH) {
-        }
-        Chunk2[change_count] = TCNT1 - prevtcnt1;
-        dir2[change_count++] = '0';
+    if (direction[chunk_index][change_count - 1] == '0') {
+      prev_tcnt1 = TCNT1;
+      while (digitalRead(IRpin) == LOW) {
       }
-    }
-
-    if (current_chunk == 3) {
-      if (dir3[change_count - 1] == '0') {
-        prevtcnt1 = TCNT1;
-        while (digitalRead(IRpin) == LOW) {
-        }
-        Chunk3[change_count] = TCNT1 - prevtcnt1;
-        dir3[change_count++] = '1';
-      } else {
-        prevtcnt1 = TCNT1;
-        while (digitalRead(IRpin) == HIGH) {
-        }
-        Chunk3[change_count] = TCNT1 - prevtcnt1;
-        dir3[change_count++] = '0';
+      TimerValue[chunk_index][change_count] = TCNT1 - prev_tcnt1;
+      direction[chunk_index][change_count++] = '1';
+    } else {
+      prev_tcnt1 = TCNT1;
+      while (digitalRead(IRpin) == HIGH) {
       }
+      TimerValue[chunk_index][change_count] = TCNT1 - prev_tcnt1;
+      direction[chunk_index][change_count++] = '0';
+      //      }
     }
   }
+
   Serial.println("Bit stream detected!");
-  change_count = 0;
-  time = (long)Chunk1[change_count];
-  Serial.print(time);
-  Serial.print("\t");
-  Serial.println(dir1[change_count++]);
-  while (change_count < SAMPLE_SIZE) {
-    time = (long)Chunk1[change_count];
+  chunk = 0;
+
+  while (chunk < 3) {
+    time = (long)TimerValue[chunk][change_count] * 4;
     Serial.print(time);
     Serial.print("\t");
-    Serial.println(dir1[change_count++]);
+    Serial.println(direction[chunk][change_count++]);
+    while (change_count < SAMPLE_SIZE) {
+      time = (long)TimerValue[chunk][change_count] * 4;
+      //   Serial.print(time);
+      //   Serial.print("\t");
+      //   Serial.println(direction[change_count-1]);
+      Serial.print(time);
+      Serial.print("\t");
+      Serial.println(direction[chunk][change_count++]);
+    }
+    chunk++;
+    change_count = 0;
   }
 
-  change_count = 0;
-  time = (long)Chunk2[change_count] * 4;
-  Serial.print(time);
-  Serial.print("\t");
-  Serial.println(dir2[change_count++]);
-  while (change_count < SAMPLE_SIZE) {
-    time = (long)Chunk2[change_count] * 4;
-    Serial.print(time);
-    Serial.print("\t");
-    Serial.println(dir2[change_count++]);
-  }
-
-  change_count = 0;
-  time = (long)Chunk3[change_count] * 4;
-  Serial.print(time);
-  Serial.print("\t");
-  Serial.println(dir3[change_count++]);
-  while (change_count < SAMPLE_SIZE) {
-    time = (long)Chunk3[change_count] * 4;
-    Serial.print(time);
-    Serial.print("\t");
-    Serial.println(dir3[change_count++]);
-  }
   Serial.println("Bit stream end!");
   delay(2000);
 }
