@@ -106,13 +106,20 @@ void loop() {
     }
     i++;
   };
+
+  int output_mode = BIN; // HEX or BIN
   for (size_t i = 0; i < sizeof(word); i++) {
     if (i == 0 || i == 7 || i == 14) {
-      Serial.print("\nbyte: 0x");
+      if (output_mode == HEX) {
+        Serial.print("\nbyte: 0x");
+      } else {
+        Serial.print("\nbyte: 0b ");
+      }
     }
-    Serial.print(word[i], HEX);
+    Serial.print(word[i], output_mode);
     Serial.print(" ");
   }
+
   for (size_t i = 0; i < OFFSETS; i++) { // reset the timings array
     Timings[i] = (char)0;
   }
