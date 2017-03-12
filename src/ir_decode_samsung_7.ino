@@ -3,7 +3,7 @@
 #include <avr/interrupt.h>
 #include <avr/io.h>
 
-#define OFFSETS 500
+#define OFFSETS 350
 
 int IRpin = 11;
 unsigned long Timings[OFFSETS];
@@ -51,15 +51,18 @@ void loop() {
     OldState = NewState;
   }
 
-  Serial.print("\nMicros Diff: ");
+  // Serial.print("\nMicros Diff: ");
   Serial.print(micros() - StartTime);
 
-  Serial.print("\nBit stream detected!\n");
+  Serial.print("\n===>>Bit stream detected<===!\n");
 
   byte word[21] = {0}; // samsung AC sends 3 chunks of 7 bytes each
-  unsigned int bit_index, byte_index, shifter;
+  unsigned int bit_index, byte_index, shifter, checksum_byte_index;
   bit_index = 0;
   byte_index = 0;
+  checksum_byte_index = 1; // second byte its the checksum
+  unsigned int checksum_ones_sum[3] = {0};
+
   for (size_t i = 0; i < OFFSETS; i++) {
     if (bit_index == 8) {
       bit_index = 0;
@@ -96,34 +99,75 @@ void loop() {
         Timings[i] + Timings[i + 1] > 1200) { // decode bit 0
       // Serial.print("0");
       word[byte_index] = word[byte_index] | (0x0 << shifter);
+
       bit_index++;
     }
     if (Timings[i] + Timings[i + 1] > 800 &&
         Timings[i] + Timings[i + 1] < 1200) { // decode bit 1
       // Serial.print("1");
       word[byte_index] = word[byte_index] | (0x1 << shifter);
+
+      if (!(byte_index == 1 || byte_index == 8 ||
+            byte_index == 15)) { // exclude the checksum byte itself
+        // Serial.print("\t ones_sum at: ");
+        // Serial.print(byte_index / 7);
+        // Serial.print(" checksum_ones_sum++");
+        checksum_ones_sum[byte_index / 7]++;
+      }
+
       bit_index++;
     }
     i++;
   };
 
-  int output_mode = BIN; // HEX or BIN
+  int output_mode = HEX; // HEX or BIN
   for (size_t i = 0; i < sizeof(word); i++) {
     if (i == 0 || i == 7 || i == 14) {
       if (output_mode == HEX) {
-        Serial.print("\nbyte: 0x");
+        Serial.print("\nword: 0x");
       } else {
-        Serial.print("\nbyte: 0b ");
+        Serial.print("\nword: 0b ");
       }
     }
     Serial.print(word[i], output_mode);
     Serial.print(" ");
   }
 
+  for (size_t i = 0; i < 3; i++) {
+    ouput_checksum(checksum_ones_sum[i]);
+  }
+
   for (size_t i = 0; i < OFFSETS; i++) { // reset the timings array
     Timings[i] = (char)0;
   }
 
-  Serial.print("\nBit stream end!");
+  Serial.print("\n\nBit stream end!");
   delay(2000);
+}
+
+void ouput_checksum(unsigned int ones_sum) {
+  Serial.print("\nones count: ");
+  Serial.print(ones_sum);
+
+  byte checksum = ones_sum % 15;
+  if (checksum == 0) {
+    checksum = 15;
+  }
+  Serial.print("\t mod15: ");
+  Serial.print(checksum, BIN);
+
+  checksum = ~checksum;
+  Serial.print("\t flip: ");
+  Serial.print(checksum, BIN);
+
+  checksum = (checksum & 0xF0) >> 4 | (checksum & 0x0F) << 4;
+  checksum = (checksum & 0xCC) >> 2 | (checksum & 0x33) << 2;
+  checksum = (checksum & 0xAA) >> 1 | (checksum & 0x55) << 1;
+
+  checksum = (checksum & 0XF0) >> 4; // only 4 bits
+
+  Serial.print("\t rev: 0b ");
+  Serial.print(checksum, BIN);
+  Serial.print("\t rev: 0x");
+  Serial.print(checksum, HEX);
 }
