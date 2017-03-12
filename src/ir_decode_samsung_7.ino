@@ -34,7 +34,7 @@ void loop() {
 
     while (OldState == (NewState = digitalRead(IRpin))) {
       CurrentTime = micros();
-      if (CurrentTime - StartTime > 500000) {
+      if (CurrentTime - StartTime > 500000) { // wait for more codes timeout
         Finished = true;
         break;
       }
@@ -93,13 +93,13 @@ void loop() {
     // Serial.print("\t bit: ");
 
     if (Timings[i] + Timings[i + 1] < 2500 &&
-        Timings[i] + Timings[i + 1] > 1200) {
+        Timings[i] + Timings[i + 1] > 1200) { // decode bit 0
       // Serial.print("0");
       word[byte_index] = word[byte_index] | (0x0 << shifter);
       bit_index++;
     }
     if (Timings[i] + Timings[i + 1] > 800 &&
-        Timings[i] + Timings[i + 1] < 1200) {
+        Timings[i] + Timings[i + 1] < 1200) { // decode bit 1
       // Serial.print("1");
       word[byte_index] = word[byte_index] | (0x1 << shifter);
       bit_index++;
@@ -112,6 +112,9 @@ void loop() {
     }
     Serial.print(word[i], HEX);
     Serial.print(" ");
+  }
+  for (size_t i = 0; i < OFFSETS; i++) { // reset the timings array
+    Timings[i] = (char)0;
   }
 
   Serial.print("\nBit stream end!");
