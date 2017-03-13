@@ -1,8 +1,5 @@
 #include <Arduino.h>
 
-#include <avr/interrupt.h>
-#include <avr/io.h>
-
 #define OFFSETS 350
 
 int IRpin = 11;
@@ -10,12 +7,12 @@ unsigned long Timings[OFFSETS];
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("Analyze IR Remote");
+  Serial.println("Analyze and Decode Samsung IR Remote");
   pinMode(IRpin, INPUT);
 }
 
 void loop() {
-  Serial.println("Waiting2...");
+  Serial.print("\nWaiting remcon signal...");
 
   unsigned int offset_index = 0;
   byte OldState = HIGH; // hi logic while ir receiver sleeps
@@ -23,7 +20,6 @@ void loop() {
   unsigned long StartTime, CurrentTime, PrevTime;
   bool Finished = false;
   while (true) {
-
     // hold first on HIGH
     while (digitalRead(IRpin) == HIGH && offset_index == 0) {
       // Serial.print("\nMicrosB4\t");
@@ -39,12 +35,9 @@ void loop() {
         break;
       }
     }
-
     Timings[offset_index] = CurrentTime - PrevTime; // write the delta t to
                                                     // array
-
     PrevTime = CurrentTime;
-
     if (Finished)
       break;
     offset_index++;
@@ -52,15 +45,13 @@ void loop() {
   }
 
   // Serial.print("\nMicros Diff: ");
-  Serial.print(micros() - StartTime);
-
+  // Serial.print(micros() - StartTime);
   Serial.print("\n===>>Bit stream detected<===!\n");
 
   byte word[21] = {0}; // samsung AC sends 3 chunks of 7 bytes each
-  unsigned int bit_index, byte_index, shifter, checksum_byte_index;
+  unsigned int bit_index, byte_index, shifter;
   bit_index = 0;
   byte_index = 0;
-  checksum_byte_index = 1; // second byte its the checksum
   unsigned int checksum_ones_sum[3] = {0};
 
   for (size_t i = 0; i < OFFSETS; i++) {
@@ -142,7 +133,7 @@ void loop() {
   }
 
   Serial.print("\n\nBit stream end!");
-  delay(2000);
+  delay(500);
 }
 
 void ouput_checksum(unsigned int ones_sum) {
@@ -153,20 +144,20 @@ void ouput_checksum(unsigned int ones_sum) {
   if (checksum == 0) {
     checksum = 15;
   }
-  Serial.print("\t mod15: ");
+  Serial.print("\t mod15: 0b");
   Serial.print(checksum, BIN);
 
   checksum = ~checksum;
-  Serial.print("\t flip: ");
-  Serial.print(checksum, BIN);
+  Serial.print("\t flip: 0b");
+  Serial.print(checksum & 0XF, BIN);
 
   checksum = (checksum & 0xF0) >> 4 | (checksum & 0x0F) << 4;
   checksum = (checksum & 0xCC) >> 2 | (checksum & 0x33) << 2;
   checksum = (checksum & 0xAA) >> 1 | (checksum & 0x55) << 1;
 
-  checksum = (checksum & 0XF0) >> 4; // only 4 bits
+  checksum = (checksum & 0XF0) >> 4; // trim only 4 significant bits
 
-  Serial.print("\t rev: 0b ");
+  Serial.print("\t rev: 0b");
   Serial.print(checksum, BIN);
   Serial.print("\t rev: 0x");
   Serial.print(checksum, HEX);
